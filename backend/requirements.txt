@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+python-multipart
+faster-whisper
+openai
+ffmpeg-python
+srt
+pythainlp
+whisperx
+torchaudio
