@@ -24,7 +24,7 @@
 ```bash
 cd backend
 # สร้าง Virtual Environment
-python -m venv venv
+py -m venv venv
 
 # เปิดใช้งาน venv (Windows)
 .\venv\Scripts\activate
@@ -33,7 +33,7 @@ python -m venv venv
 pip install -r requirements.txt
 
 # ดาวน์โหลดฟอนต์ไทยมาตรฐาน
-python download_fonts.py
+py download_fonts.py
 ```
 
 ### 2. ส่วนของ Frontend (Next.js)
@@ -52,7 +52,7 @@ npm install
 ### 1. สตาร์ท Backend
 ใน Terminal ของ `backend` (ที่เปิดใช้งาน venv อยู่):
 ```bash
-python main.py
+py main.py
 ```
 *Backend จะรันอยู่ที่: `http://localhost:8000`*
 

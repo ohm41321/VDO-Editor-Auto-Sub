@@ -8,6 +8,7 @@ type TaskStatus = {
   progress: number;
   result_url?: string;
   waiting_for_user?: boolean;
+  step_time?: string;
 };
 
 type SubtitleItem = {
@@ -15,12 +16,13 @@ type SubtitleItem = {
   start: number;
   end: number;
   content: string;
+  words?: any[];
 };
 
 const STEPS = [
   "Uploading Video",
   "Extracting Audio",
-  "Transcribing (Whisper AI)",
+  "Transcribing (High Precision)",
   "Refining Thai (LM Studio)",
   "Ready for Customization",
   "Burning Subtitles",
@@ -29,8 +31,7 @@ const STEPS = [
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
-  // ... (rest of states)
-
+  
   // Helper to format time for display (detailed)
   const formatDetailedTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -47,13 +48,14 @@ export default function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Subtitle styling state
-  const [fontSize, setFontSize] = useState(24);
+  const [fontSize, setFontSize] = useState(28);
   const [fontFamily, setFontFamily] = useState("Kanit");
   const [primaryColor, setPrimaryColor] = useState("#FFFFFF");
   const [outlineColor, setOutlineColor] = useState("#000000");
+  const [outlineSize, setOutlineSize] = useState(3.0);
   const [highlightColor, setHighlightColor] = useState("#FFFF00");
-  const [bgStyle, setBgStyle] = useState("outline"); // "outline", "shadow", "box"
-  const [animationType, setAnimationType] = useState("karaoke"); // "none", "fade", "pop", "karaoke"
+  const [bgStyle, setBgStyle] = useState("outline"); // "outline", "shadow", "box", "glow"
+  const [animationType, setAnimationType] = useState("karaoke"); // "none", "fade", "pop", "bounce", "karaoke"
   const [maxWords, setMaxWords] = useState(5);
   const [headline, setHeadline] = useState("");
   const [headlineSize, setHeadlineSize] = useState(36);
@@ -64,14 +66,33 @@ export default function Home() {
   const [headlineBgStyle, setHeadlineBgStyle] = useState("box"); // "none", "box", "outline"
   const [headlineOutlineSize, setHeadlineOutlineSize] = useState(3);
   const [useLlm, setUseLlm] = useState(true);
-  const [customVocab, setCustomVocab] = useState("Minecraft, ตัดต้นไม้กันเถอะ");
+  const [customVocab, setCustomVocab] = useState("Lucia AI");
   
   // New State for Subtitle Editor & Position
   const [subtitles, setSubtitles] = useState<SubtitleItem[]>([]);
   const [rawWords, setRawWords] = useState<any[]>([]); // Store original word-level data
-  const [marginV, setMarginV] = useState(20);
+  const [marginV, setMarginV] = useState(120);
   const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState<number>(0); // Video total duration (Upgrade 5)
   const [autoScroll, setAutoScroll] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [replaceQuery, setReplaceQuery] = useState("");
+  const [lmConnected, setLmConnected] = useState<boolean | null>(null);
+
+  // Check LM Studio Connection
+  useEffect(() => {
+    const checkLm = async () => {
+      try {
+        const res = await fetch('http://localhost:1234/v1/models');
+        setLmConnected(res.ok);
+      } catch (err) {
+        setLmConnected(false);
+      }
+    };
+    checkLm();
+    const interval = setInterval(checkLm, 5000); // Re-check every 5 seconds
+    return () => clearInterval(interval);
+  }, []);
 
   // Fetch subtitles when waiting for user
   useEffect(() => {
@@ -80,7 +101,6 @@ export default function Home() {
         .then(res => res.json())
         .then(data => {
           setSubtitles(data);
-          // Store data with segment structure
           setRawWords(data); 
         })
         .catch(err => console.error("Error fetching subtitles:", err));
@@ -147,7 +167,6 @@ export default function Home() {
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger shortcuts if user is typing in a textarea or input
       if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) {
         return;
       }
@@ -179,7 +198,6 @@ export default function Home() {
       content: "พิมพ์คำบรรยายที่นี่"
     };
     
-    // Insert and sort by start time
     const newSubs = [...subtitles, newSub].sort((a, b) => a.start - b.start);
     setSubtitles(newSubs);
   };
@@ -202,7 +220,6 @@ export default function Home() {
       video.pause();
       video.currentTime = time;
       
-      // Attempt to play after seeking
       setTimeout(() => {
         video.play().catch(error => {
           console.log("Playback prevented or failed:", error);
@@ -314,6 +331,7 @@ export default function Home() {
           bg_style: bgStyle,
           animation_type: animationType,
           max_words: maxWords,
+          outline_size: outlineSize,
           headline: headline,
           headline_size: headlineSize,
           headline_v: headlineV,
@@ -327,9 +345,6 @@ export default function Home() {
       });
 
       if (!response.ok) throw new Error('Failed to start rendering');
-      
-      // Resume polling
-      // useEffect will naturally resume because waiting_for_user is now false
     } catch (error) {
       console.error(error);
       alert('Error starting video render.');
@@ -341,15 +356,61 @@ export default function Home() {
     setTaskId(null);
     setStatusData(null);
     setVideoUrl(null);
+    setDuration(0);
   };
 
   const isProcessing = taskId !== null || (statusData !== null && statusData.step === 0);
   const isCustomizing = statusData?.waiting_for_user;
 
   return (
-    <main className="container" style={{ maxWidth: isCustomizing ? '1800px' : '800px', transition: 'max-width 0.3s ease' }}>
-      <h1>Auto Thai Subtitler</h1>
-      <p>Upload a video to generate and burn AI-powered Thai subtitles automatically.</p>
+    <main className="container" style={{ maxWidth: isCustomizing ? '1800px' : '800px', transition: 'max-width 0.3s ease', paddingTop: '80px' }}>
+      {/* Professional Navbar */}
+      <nav style={{ 
+        position: 'fixed', 
+        top: 0, 
+        left: 0, 
+        right: 0, 
+        height: '64px', 
+        backgroundColor: 'rgba(5, 5, 5, 0.85)', 
+        backdropFilter: 'blur(20px)', 
+        borderBottom: '1px solid rgba(255,255,255,0.06)', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between', 
+        padding: '0 30px', 
+        zIndex: 1000 
+      }}>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <h1 style={{ fontSize: '1.2rem', margin: 0, background: 'linear-gradient(to right, #fff, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontWeight: 800 }}>
+            VDO Editor Lucia
+          </h1>
+          <span style={{ fontSize: '10px', color: '#888', fontWeight: 500 }}>Premium Thai Subtitle System</span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          {/* LM Studio Connection Status */}
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '8px', 
+            padding: '6px 12px', 
+            backgroundColor: '#111', 
+            borderRadius: '12px', 
+            border: '1px solid #222' 
+          }}>
+            <div style={{ 
+              width: '8px', 
+              height: '8px', 
+              borderRadius: '50%', 
+              backgroundColor: lmConnected === null ? '#fbbf24' : (lmConnected ? '#22c55e' : '#ef4444'),
+              boxShadow: lmConnected ? '0 0 10px rgba(34, 197, 94, 0.4)' : 'none'
+            }}></div>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: '#888' }}>
+              LM STUDIO: {lmConnected === null ? 'CHECKING...' : (lmConnected ? 'CONNECTED' : 'DISCONNECTED')}
+            </span>
+          </div>
+        </div>
+      </nav>
 
       {!videoUrl ? (
         <div className="upload-card">
@@ -373,26 +434,26 @@ export default function Home() {
                 <svg className="upload-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
-                <h2>{file ? file.name : 'Select or drop video'}</h2>
-                <p>{file ? 'Click to change file' : 'MP4, MOV, AVI up to 1GB'}</p>
+                <h2>{file ? file.name : 'เลือกหรือวางไฟล์วิดีโอ'}</h2>
+                <p>{file ? 'คลิกที่นี่หากต้องการเปลี่ยนไฟล์' : 'รองรับรูปแบบ MP4, MOV, AVI สูงสุด 1GB'}</p>
               </div>
 
-              <div style={{ margin: '15px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer' }}>
+              <div style={{ margin: '15px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', cursor: 'pointer' }}>
                 <input 
                   type="checkbox" 
                   id="useLlmToggle" 
+                  className="ios-toggle"
                   checked={useLlm} 
                   onChange={(e) => setUseLlm(e.target.checked)} 
-                  style={{ cursor: 'pointer' }}
                 />
-                <label htmlFor="useLlmToggle" style={{ fontSize: '14px', color: '#666', cursor: 'pointer' }}>
-                  ใช้งาน AI (LM Studio) เกลาคำอัตโนมัติ
+                <label htmlFor="useLlmToggle" style={{ fontSize: '14px', color: '#9ca3af', cursor: 'pointer', fontWeight: 500 }}>
+                  ใช้งาน AI (LM Studio) เกลาคำภาษาไทยอัตโนมัติ
                 </label>
               </div>
 
               <div style={{ margin: '0 0 20px 0', width: '100%', textAlign: 'left' }}>
-                <label style={{ display: 'block', fontSize: '14px', color: '#666', marginBottom: '8px' }}>
-                  คำศัพท์เฉพาะ / บริบท (ช่วยให้ AI ฟังแม่นขึ้น)
+                <label style={{ display: 'block', fontSize: '14px', color: '#9ca3af', marginBottom: '8px', fontWeight: 500 }}>
+                  คำศัพท์เฉพาะ / บริบท (ช่วยเสริมความแม่นยำในการถอดเสียง)
                 </label>
                 <input 
                   type="text" 
@@ -401,10 +462,13 @@ export default function Home() {
                   placeholder="เช่น: Minecraft, ตัดต้นไม้, Lucia AI, ชื่อคน" 
                   style={{ 
                     width: '100%', 
-                    padding: '10px', 
-                    borderRadius: '8px', 
-                    border: '1px solid #ddd',
-                    fontSize: '14px'
+                    padding: '12px', 
+                    borderRadius: '12px', 
+                    border: '1px solid #24242b',
+                    backgroundColor: '#0a0a0c',
+                    color: '#f3f4f6',
+                    fontSize: '14px',
+                    outline: 'none'
                   }}
                 />
               </div>
@@ -414,560 +478,607 @@ export default function Home() {
                 onClick={processVideo} 
                 disabled={!file}
               >
-                Generate Subtitles
+                เริ่มประมวลผลคำบรรยาย
               </button>
             </>
           ) : (
-            <div className="progress-container">
-              <div className="progress-header">
-                <span>{statusData?.status || "Starting..."}</span>
-                <span>{statusData?.progress || 0}%</span>
+            <div className="progress-container" style={{ width: '100%' }}>
+              <div className="progress-header" style={{ marginBottom: '20px' }}>
+                <span style={{ color: '#fff', fontSize: '1.1rem', fontWeight: 700 }}>{statusData?.status || "กำลังประมวลผล..."}</span>
+                <span style={{ color: '#8b5cf6', fontWeight: 800, fontSize: '1.2rem' }}>{statusData?.progress || 0}%</span>
               </div>
               
-              <ul className="step-list">
-                {STEPS.map((stepName, index) => {
-                  const currentStep = statusData?.step || 0;
-                  let className = "step-item";
-                  if (index < currentStep) className += " completed";
-                  else if (index === currentStep) className += " active";
-                  
-                  return (
-                    <li key={index} className={className}>
-                      <div className="step-icon"></div>
-                      <span>{stepName}</span>
-                    </li>
-                  );
-                })}
-              </ul>
+              {statusData && statusData.step < 4 && (
+                <ul className="step-list" style={{ marginBottom: '30px' }}>
+                  {STEPS.map((stepName, index) => {
+                    const currentStep = statusData?.step || 0;
+                    let className = "step-item";
+                    let timeInfo = null;
 
-              {/* Customization Panel - New Side-by-Side Layout */}
+                    if (index < currentStep) {
+                      className += " completed";
+                      if (index === currentStep - 1 && statusData?.step_time) {
+                        timeInfo = <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#8b5cf6', fontWeight: 600, backgroundColor: 'rgba(139,92,246,0.1)', padding: '2px 8px', borderRadius: '6px' }}>{statusData.step_time}</span>;
+                      }
+                    }
+                    else if (index === currentStep) className += " active";
+                    
+                    return (
+                      <li key={index} className={className} style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                        <div className="step-icon"></div>
+                        <span style={{ fontWeight: index === currentStep ? 700 : 500 }}>{stepName}</span>
+                        {timeInfo}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+
+              {/* 3-Column Layout: Left (Appearance), Center (Preview & Timeline), Right (Editor) */}
               {statusData?.waiting_for_user && (
                 <div className="customization-panel" style={{ 
-                  marginTop: '40px', 
+                  marginTop: '10px', 
                   display: 'flex', 
                   flexDirection: 'row',
-                  gap: '30px', 
-                  alignItems: 'flex-start',
+                  gap: '20px', 
+                  alignItems: 'stretch',
                   width: '100%',
-                  textAlign: 'left'
+                  textAlign: 'left',
+                  height: 'calc(100vh - 180px)',
+                  overflow: 'hidden'
                 }}>
-
-                  {/* Left Column: Preview & Settings */}
-                  <div style={{ 
-                    flex: '3',
+                  {/* Column 1: Appearance (Left) */}
+                  <div className="custom-scrollbar" style={{ 
+                    flex: '0 0 310px', 
+                    overflowY: 'auto',
+                    paddingRight: '5px',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '20px',
-                    position: 'sticky',
-                    top: '20px',
-                    maxHeight: 'calc(100vh - 40px)',
-                    overflowY: 'auto',
-                    paddingRight: '10px'
+                    gap: '15px'
                   }}>
-                    {/* Floating Cinematic Preview Section */}
                     <div style={{ 
-                      width: '100%', 
-                      backgroundColor: '#1a1a1a', 
-                      padding: '25px', 
-                      borderRadius: '24px', 
-                      boxShadow: '0 20px 50px rgba(0,0,0,0.3)',
-                      border: '1px solid #333'
-                    }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                        <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 600, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ color: '#0070f3' }}>●</span> Live Editor Preview
-                        </h3>
-                        <button className="btn" onClick={startRender} style={{ margin: 0, padding: '10px 25px', backgroundColor: '#0070f3', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>
-                          🚀 Finish & Render
-                        </button>
-                      </div>
-
-                      <div id="video-preview-container" style={{ 
-                        width: '100%', 
-                        borderRadius: '16px', 
-                        overflow: 'hidden',
-                        backgroundColor: '#000',
-                        maxHeight: '75vh',
-                        minHeight: '300px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        position: 'relative',
-                        boxShadow: '0 15px 40px rgba(0,0,0,0.6)'
-                      }}>
-                        {/* Wrapper that scales exactly with the video */}
-                        <div style={{ 
-                          position: 'relative', 
-                          maxWidth: '100%', 
-                          maxHeight: '75vh',
-                          containerType: 'size',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          width: '100%',
-                          aspectRatio: '16 / 9'
-                        }}>
-                          {videoUrl || taskId ? (
-                             <video
-                               ref={videoRef}
-                               src={videoUrl || (taskId ? `http://localhost:8000/api/video/${taskId}` : undefined)}
-                               controls
-                               preload="auto"
-                               playsInline
-                               onLoadedMetadata={() => console.log("✓ Video loaded:", videoUrl || `http://localhost:8000/api/video/${taskId}`)}
-                               onError={(e) => console.error("✗ Video error:", e.currentTarget?.error?.message, "src:", e.currentTarget?.src)}
-                               style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                             />
-                           ) : (
-                             <div style={{ textAlign: 'center', color: '#888' }}>
-                               <p>Waiting for video...</p>
-                             </div>
-                           )}
-
-                           {/* Headline Overlay - Persistent at Top */}
-                           {headline && (
-                            <div style={{
-                              position: 'absolute',
-                              top: `calc((${headlineV} / 720) * 100cqh)`,
-                              left: '0',
-                              width: '100%',
-                              textAlign: 'center',
-                              pointerEvents: 'none',
-                              zIndex: 1,
-                              padding: '0 10%'
-                            }}>
-                              <div style={{
-                                fontFamily: headlineFont,
-                                fontSize: `calc((${headlineSize} / 720) * 100cqh)`,
-                                color: headlineColor,
-                                backgroundColor: headlineBgStyle === 'box' ? `${headlineBgColor}CC` : 'transparent', // CC = 80% opacity
-                                padding: headlineBgStyle === 'box' ? `calc((10 / 720) * 100cqh) calc((20 / 720) * 100cqh)` : `calc((5 / 720) * 100cqh)`, 
-                                WebkitTextStroke: headlineBgStyle === 'outline' ? `calc((${headlineOutlineSize} / 720) * 100cqh) ${headlineBgColor}` : 'none',
-                                paintOrder: 'stroke fill',
-                                display: 'inline-block',
-                                fontWeight: 800,
-                                border: 'none',
-                                lineHeight: '1.2',
-                                whiteSpace: 'pre-wrap',
-                                textAlign: 'center'
-                              }}>
-                                {headline}
-                              </div>
-                            </div>
-                           )}
-
-                           {/* Timecode Counter Overlay - Positioned relative to video area */}
-
-                          <div style={{
-                            position: 'absolute',
-                            top: '15px',
-                            left: '15px',
-                            backgroundColor: 'rgba(0,0,0,0.7)',
-                            color: '#0070f3',
-                            padding: '5px 12px',
-                            borderRadius: '8px',
-                            fontFamily: 'monospace',
-                            fontSize: '14px',
-                            fontWeight: 700,
-                            border: '1px solid rgba(255,255,255,0.1)',
-                            zIndex: 2,
-                            pointerEvents: 'none'
-                          }}>
-                            {formatDetailedTime(currentTime)}
-                          </div>
-
-                          {/* Accurate Preview Overlay - Scaled exactly to video height */}
-                          <div style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            width: '100%',
-                            height: '100%',
-                            pointerEvents: 'none',
-                            zIndex: 1,
-                            padding: `0 5% calc((${marginV} / 720) * 100cqh) 5%`,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            justifyContent: 'flex-end'
-                          }}>
-                            {subtitles
-                              .filter(sub => currentTime >= sub.start && currentTime <= sub.end)
-                              .map((sub) => (
-                                <div key={sub.index} style={{
-                                  fontFamily: fontFamily,
-                                  fontSize: `calc((${fontSize} / 720) * 100cqh)`, 
-                                  WebkitTextStroke: bgStyle === 'outline' ? `calc((2 / 720) * 100cqh) ${outlineColor}` : 'none',
-                                  paintOrder: bgStyle === 'outline' ? 'stroke fill' : 'normal',
-                                  textShadow: bgStyle === 'shadow' ? `2px 2px 4px rgba(0,0,0,0.8), 0 0 10px rgba(0,0,0,0.5)` : (bgStyle === 'outline' ? `0px 2px 4px rgba(0,0,0,0.5)` : 'none'),
-                                  backgroundColor: bgStyle === 'box' ? 'rgba(0,0,0,0.5)' : 'transparent',
-                                  padding: bgStyle === 'box' ? '5px 15px' : '0',
-                                  borderRadius: bgStyle === 'box' ? '8px' : '0',
-                                  fontWeight: 700,
-                                  lineHeight: '1.2',
-                                  whiteSpace: 'pre-wrap',
-                                  display: 'inline-block',
-                                  animation: animationType === 'fade' ? 'subFadeIn 0.3s ease-out forwards' : (animationType === 'pop' ? 'subPopIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards' : 'none')
-                                }}>
-                                  {animationType === 'karaoke' && sub.words ? (
-                                    sub.words.map((w, idx) => {
-                                      const isWordActive = currentTime >= w.start && currentTime <= w.end;
-                                      return (
-                                        <span key={idx} style={{ color: isWordActive ? highlightColor : primaryColor, transition: 'color 0.1s ease' }}>
-                                          {w.word}
-                                        </span>
-                                      );
-                                    })
-                                  ) : (
-                                    <span style={{ color: primaryColor }}>{sub.content}</span>
-                                  )}
-                                </div>
-                              ))
-                            }
-                          </div>
-                        </div>
-                      </div>
-
-                      <style jsx global>{`
-                        @keyframes subFadeIn {
-                          from { opacity: 0; transform: translateY(5px); }
-                          to { opacity: 1; transform: translateY(0); }
-                        }
-                        @keyframes subPopIn {
-                          0% { transform: scale(0.8); opacity: 0; }
-                          70% { transform: scale(1.05); }
-                          100% { transform: scale(1); opacity: 1; }
-                        }
-                      `}</style>
-
-                      {/* Quick Presets Bar */}
-                      <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
-                        {[
-                          { label: '🎮 Gamer', font: 'Kanit', size: 42, color: '#FFFF00', outline: '#000000', v: 60 },
-                          { label: '🏙️ Minimal', font: 'Prompt', size: 32, color: '#FFFFFF', outline: '#000000', v: 40 },
-                          { label: '📢 Bold', font: 'Mitr', size: 48, color: '#FF0000', outline: '#FFFFFF', v: 80 }
-                        ].map(p => (
-                          <button 
-                            key={p.label}
-                            onClick={() => {
-                              setFontFamily(p.font); setFontSize(p.size);
-                              setPrimaryColor(p.color); setOutlineColor(p.outline);
-                              setMarginV(p.v);
-                            }}
-                            style={{ padding: '4px 10px', borderRadius: '6px', fontSize: '10px', cursor: 'pointer', border: '1px solid #444', backgroundColor: '#2a2a2a', color: '#eee' }}
-                          >
-                            {p.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* High-Contrast Settings Panel */}
-                    <div style={{ 
-                      backgroundColor: '#161616', 
+                      backgroundColor: 'rgba(22, 22, 26, 0.65)', 
+                      backdropFilter: 'blur(16px)',
                       padding: '20px', 
                       borderRadius: '24px', 
-                      border: '1px solid #2a2a2a', 
-                      boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
+                      border: '1px solid rgba(255,255,255,0.05)', 
+                      boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                      flex: '1',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '18px'
                     }}>
-                      <h4 style={{ color: '#fff', marginTop: 0, marginBottom: '20px', fontSize: '1.1rem', borderBottom: '1px solid #2a2a2a', paddingBottom: '12px', fontWeight: 600 }}>🎨 Appearance</h4>
+                      <h4 style={{ color: '#fff', marginTop: 0, marginBottom: '5px', fontSize: '1.1rem', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '12px', fontWeight: 800 }}>🎨 Subtitle Settings</h4>
 
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
                         <div>
-                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#aaa', marginBottom: '8px' }}>Video Headline (Top Title)</label>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#9ca3af', marginBottom: '8px' }}>พาดหัววิดีโอ (Headline)</label>
                           <textarea 
-                            placeholder="Enter catchy headline... (Enter for new line)" 
+                            placeholder="พิมพ์พาดหัวสุดปังที่นี่..." 
                             value={headline} 
                             onChange={(e) => setHeadline(e.target.value)} 
-                            style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #333', backgroundColor: '#000', color: '#fff', fontSize: '14px', outline: 'none', marginBottom: headline ? '15px' : '0', resize: 'vertical', minHeight: '60px', fontFamily: 'inherit' }}
+                            style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #24242b', backgroundColor: '#050505', color: '#f3f4f6', fontSize: '13px', outline: 'none', marginBottom: headline ? '12px' : '0', resize: 'vertical', minHeight: '55px', fontFamily: 'inherit' }}
                           />
                           
                           {headline && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', padding: '18px', backgroundColor: '#111', borderRadius: '18px', border: '1px solid #2a2a2a', marginTop: '10px' }}>
-                              
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '12px', backgroundColor: '#09090b', borderRadius: '14px', border: '1px solid #1f1f23', marginTop: '5px' }}>
                               <div>
-                                <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#555', textTransform: 'uppercase', marginBottom: '6px' }}>Headline Font</label>
-                                <select value={headlineFont} onChange={(e) => setHeadlineFont(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '10px', border: '1px solid #333', backgroundColor: '#000', color: '#fff', fontSize: '13px' }}>
+                                <label style={{ display: 'block', fontSize: '9px', fontWeight: 800, color: '#4b5563', textTransform: 'uppercase', marginBottom: '4px' }}>Headline Font</label>
+                                <select value={headlineFont} onChange={(e) => setHeadlineFont(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #222', backgroundColor: '#050505', color: '#f3f4f6', fontSize: '12px' }}>
                                   <option value="Kanit">Kanit</option>
                                   <option value="Prompt">Prompt</option>
                                   <option value="Mitr">Mitr</option>
+                                  <option value="Sarabun">Sarabun</option>
+                                  <option value="Chakra Petch">Chakra Petch</option>
                                 </select>
                               </div>
-
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                                 <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                    <label style={{ fontSize: '10px', fontWeight: 800, color: '#555' }}>SIZE</label>
-                                    <span style={{ fontSize: '10px', fontWeight: 700, color: '#0070f3' }}>{headlineSize}px</span>
-                                  </div>
-                                  <input type="range" min="12" max="150" value={headlineSize} onChange={(e) => setHeadlineSize(Number(e.target.value))} style={{ width: '100%', accentColor: '#0070f3' }} />
+                                  <label style={{ fontSize: '9px', fontWeight: 800, color: '#4b5563' }}>SIZE {headlineSize}px</label>
+                                  <input type="range" min="12" max="150" value={headlineSize} onChange={(e) => setHeadlineSize(Number(e.target.value))} style={{ width: '100%', accentColor: '#8b5cf6' }} />
                                 </div>
                                 <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                    <label style={{ fontSize: '10px', fontWeight: 800, color: '#555' }}>POSITION</label>
-                                    <span style={{ fontSize: '10px', fontWeight: 700, color: '#0070f3' }}>{headlineV}</span>
-                                  </div>
-                                  <input type="range" min="0" max="720" value={headlineV} onChange={(e) => setHeadlineV(Number(e.target.value))} style={{ width: '100%', accentColor: '#0070f3' }} />
+                                  <label style={{ fontSize: '9px', fontWeight: 800, color: '#4b5563' }}>POS {headlineV}</label>
+                                  <input type="range" min="0" max="720" value={headlineV} onChange={(e) => setHeadlineV(Number(e.target.value))} style={{ width: '100%', accentColor: '#8b5cf6' }} />
                                 </div>
                               </div>
-
-                              <div>
-                                <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#555', textTransform: 'uppercase', marginBottom: '8px' }}>Background Style</label>
-                                <div style={{ display: 'flex', gap: '5px' }}>
-                                  {['none', 'box', 'outline'].map(style => (
-                                    <button
-                                      key={style}
-                                      onClick={() => setHeadlineBgStyle(style)}
-                                      style={{
-                                        flex: 1,
-                                        padding: '6px',
-                                        fontSize: '11px',
-                                        borderRadius: '8px',
-                                        border: headlineBgStyle === style ? '2px solid #0070f3' : '1px solid #333',
-                                        backgroundColor: headlineBgStyle === style ? 'rgba(0,112,243,0.1)' : '#000',
-                                        color: headlineBgStyle === style ? '#0070f3' : '#666',
-                                        cursor: 'pointer',
-                                        textTransform: 'capitalize'
-                                      }}
-                                    >
-                                      {style}
-                                    </button>
-                                  ))}
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                                <div>
+                                  <label style={{ display: 'block', fontSize: '9px', fontWeight: 800, color: '#4b5563', marginBottom: '4px' }}>TEXT COLOR</label>
+                                  <input type="color" value={headlineColor} onChange={(e) => setHeadlineColor(e.target.value)} style={{ border: 'none', width: '24px', height: '24px', padding: 0, cursor: 'pointer', backgroundColor: 'transparent' }} />
+                                </div>
+                                <div>
+                                  <label style={{ display: 'block', fontSize: '9px', fontWeight: 800, color: '#4b5563', marginBottom: '4px' }}>BG COLOR</label>
+                                  <input type="color" value={headlineBgColor} onChange={(e) => setHeadlineBgColor(e.target.value)} style={{ border: 'none', width: '24px', height: '24px', padding: 0, cursor: 'pointer', backgroundColor: 'transparent' }} />
                                 </div>
                               </div>
-
-                              {headlineBgStyle === 'outline' && (
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                    <label style={{ fontSize: '10px', fontWeight: 800, color: '#555' }}>OUTLINE THICKNESS</label>
-                                    <span style={{ fontSize: '10px', fontWeight: 700, color: '#0070f3' }}>{headlineOutlineSize}px</span>
-                                  </div>
-                                  <input type="range" min="1" max="20" value={headlineOutlineSize} onChange={(e) => setHeadlineOutlineSize(Number(e.target.value))} style={{ width: '100%', accentColor: '#0070f3' }} />
-                                </div>
-                              )}
-
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                <div>
-                                  <label style={{ display: 'block', fontSize: '10px', fontWeight: 800, color: '#555', marginBottom: '6px' }}>TEXT COLOR</label>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <input type="color" value={headlineColor} onChange={(e) => setHeadlineColor(e.target.value)} style={{ border: 'none', width: '25px', height: '25px', padding: 0, borderRadius: '4px', cursor: 'pointer', backgroundColor: 'transparent' }} />
-                                    <span style={{ fontSize: '10px', color: '#fff', fontFamily: 'monospace' }}>{headlineColor}</span>
-                                  </div>
-                                </div>
-                                {headlineBgStyle !== 'none' && (
-                                  <div>
-                                    <label style={{ display: 'block', fontSize: '10px', fontWeight: 800, color: '#555', marginBottom: '6px' }}>{headlineBgStyle.toUpperCase()} COLOR</label>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                      <input type="color" value={headlineBgColor} onChange={(e) => setHeadlineBgColor(e.target.value)} style={{ border: 'none', width: '25px', height: '25px', padding: 0, borderRadius: '4px', cursor: 'pointer', backgroundColor: 'transparent' }} />
-                                      <span style={{ fontSize: '10px', color: '#fff', fontFamily: 'monospace' }}>{headlineBgColor}</span>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-
                             </div>
                           )}
                         </div>
 
                         <div>
-                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#aaa', marginBottom: '8px' }}>Font Family</label>
-                          <select value={fontFamily} onChange={(e) => setFontFamily(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '12px', border: '1px solid #333', backgroundColor: '#000', color: '#fff', fontSize: '14px', outline: 'none' }}>
-                            <option value="Kanit">Kanit (Default)</option>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#9ca3af', marginBottom: '8px' }}>รูปแบบฟอนต์ (Sub Font)</label>
+                          <select value={fontFamily} onChange={(e) => setFontFamily(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '12px', border: '1px solid #24242b', backgroundColor: '#050505', color: '#f3f4f6', fontSize: '13px', outline: 'none' }}>
+                            <option value="Kanit">Kanit</option>
                             <option value="Prompt">Prompt</option>
                             <option value="Mitr">Mitr</option>
+                            <option value="Sarabun">Sarabun (ใหม่)</option>
+                            <option value="Chakra Petch">Chakra Petch (ใหม่)</option>
                           </select>
                         </div>
 
                         <div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                            <label style={{ fontSize: '13px', fontWeight: 600, color: '#aaa' }}>Font Size</label>
-                            <span style={{ fontSize: '13px', fontWeight: 700, color: '#0070f3' }}>{fontSize}px</span>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                            <label style={{ fontSize: '13px', fontWeight: 700, color: '#9ca3af' }}>ขนาดอักษร (Size)</label>
+                            <span style={{ fontSize: '12px', fontWeight: 800, color: '#8b5cf6' }}>{fontSize}px</span>
                           </div>
-                          <input type="range" min="12" max="100" value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} style={{ width: '100%', accentColor: '#0070f3', cursor: 'pointer' }} />
+                          <input type="range" min="12" max="100" value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} style={{ width: '100%', accentColor: '#8b5cf6', cursor: 'pointer' }} />
                         </div>
 
                         <div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                            <label style={{ fontSize: '13px', fontWeight: 600, color: '#aaa' }}>Position</label>
-                            <span style={{ fontSize: '13px', fontWeight: 700, color: '#0070f3' }}>{marginV}</span>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                            <label style={{ fontSize: '13px', fontWeight: 700, color: '#9ca3af' }}>ตำแหน่งแนวตั้ง (Vertical Position)</label>
+                            <span style={{ fontSize: '12px', fontWeight: 800, color: '#8b5cf6' }}>{marginV}</span>
                           </div>
-                          <input type="range" min="0" max="720" value={marginV} onChange={(e) => setMarginV(Number(e.target.value))} style={{ width: '100%', accentColor: '#0070f3', cursor: 'pointer' }} />
+                          <input type="range" min="0" max="720" value={marginV} onChange={(e) => setMarginV(Number(e.target.value))} style={{ width: '100%', accentColor: '#8b5cf6', cursor: 'pointer' }} />
                         </div>
 
                         <div>
-                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#aaa', marginBottom: '8px' }}>Background Style</label>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            {[
-                              { id: 'outline', label: 'Outline' },
-                              { id: 'shadow', label: 'Shadow' },
-                              { id: 'box', label: 'Box' }
-                            ].map(style => (
-                              <button
-                                key={style.id}
-                                onClick={() => setBgStyle(style.id)}
-                                style={{
-                                  flex: 1,
-                                  padding: '10px',
-                                  fontSize: '12px',
-                                  borderRadius: '10px',
-                                  border: bgStyle === style.id ? '2px solid #0070f3' : '1px solid #333',
-                                  backgroundColor: bgStyle === style.id ? 'rgba(0,112,243,0.1)' : '#111',
-                                  color: bgStyle === style.id ? '#0070f3' : '#888',
-                                  cursor: 'pointer',
-                                  transition: 'all 0.2s ease',
-                                  fontWeight: bgStyle === style.id ? 700 : 500
-                                }}
-                              >
-                                {style.label}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                            <label style={{ fontSize: '13px', fontWeight: 700, color: '#9ca3af' }}>จำนวนคำต่อบรรทัด (Words / Line)</label>
+                            <span style={{ fontSize: '12px', fontWeight: 800, color: '#8b5cf6' }}>{maxWords}</span>
+                          </div>
+                          <input type="range" min="1" max="15" step="1" value={maxWords} onChange={(e) => setMaxWords(Number(e.target.value))} style={{ width: '100%', accentColor: '#8b5cf6', cursor: 'pointer' }} />
+                        </div>
+
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                            <label style={{ fontSize: '13px', fontWeight: 700, color: '#9ca3af' }}>ความหนาขอบ/กล่อง (Outline / Box)</label>
+                            <span style={{ fontSize: '12px', fontWeight: 800, color: '#8b5cf6' }}>{outlineSize}</span>
+                          </div>
+                          <input type="range" min="0" max="15" step="0.5" value={outlineSize} onChange={(e) => setOutlineSize(Number(e.target.value))} style={{ width: '100%', accentColor: '#8b5cf6', cursor: 'pointer' }} />
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#9ca3af', marginBottom: '8px' }}>สไตล์ซับไตเติ้ล (Style Mode)</label>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '6px' }}>
+                            {['outline', 'shadow', 'box', 'glow'].map(style => (
+                              <button key={style} onClick={() => setBgStyle(style)} style={{ padding: '8px', fontSize: '10px', borderRadius: '8px', border: bgStyle === style ? '2px solid #8b5cf6' : '1px solid #24242b', backgroundColor: bgStyle === style ? 'rgba(139,92,246,0.15)' : '#050505', color: bgStyle === style ? '#a855f7' : '#888', cursor: 'pointer', fontWeight: bgStyle === style ? 800 : 500, textTransform: 'capitalize' }}>
+                                {style === 'glow' ? 'Neon Glow 🌟' : style}
                               </button>
                             ))}
                           </div>
                         </div>
 
                         <div>
-                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#aaa', marginBottom: '8px' }}>Animation</label>
-                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                            {[
-                              { id: 'none', label: 'None' },
-                              { id: 'fade', label: 'Fade' },
-                              { id: 'pop', label: 'Pop' },
-                              { id: 'karaoke', label: 'Highlight' }
-                            ].map(anim => (
-                              <button
-                                key={anim.id}
-                                onClick={() => setAnimationType(anim.id)}
-                                style={{
-                                  flex: '1 0 45%',
-                                  padding: '10px',
-                                  fontSize: '12px',
-                                  borderRadius: '10px',
-                                  border: animationType === anim.id ? '2px solid #0070f3' : '1px solid #333',
-                                  backgroundColor: animationType === anim.id ? 'rgba(0,112,243,0.1)' : '#111',
-                                  color: animationType === anim.id ? '#0070f3' : '#888',
-                                  cursor: 'pointer',
-                                  transition: 'all 0.2s ease',
-                                  fontWeight: animationType === anim.id ? 700 : 500
-                                }}
-                              >
-                                {anim.label}
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#9ca3af', marginBottom: '8px' }}>แอนิเมชันซับ (Animation)</label>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                            {['none', 'fade', 'pop', 'bounce', 'karaoke'].map(anim => (
+                              <button key={anim} onClick={() => setAnimationType(anim)} style={{ padding: '8px', fontSize: '10px', borderRadius: '8px', border: animationType === anim ? '2px solid #8b5cf6' : '1px solid #24242b', backgroundColor: animationType === anim ? 'rgba(139,92,246,0.15)' : '#050505', color: animationType === anim ? '#a855f7' : '#888', cursor: 'pointer', fontWeight: animationType === anim ? 800 : 500, textTransform: 'capitalize' }}>
+                                {anim === 'karaoke' ? 'Karaoke 🎤' : (anim === 'bounce' ? 'Bounce 🦘' : anim)}
                               </button>
                             ))}
                           </div>
                         </div>
 
-                        <div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                            <label style={{ fontSize: '13px', fontWeight: 600, color: '#aaa' }}>Max Words (Punchy)</label>
-                            <span style={{ fontSize: '13px', fontWeight: 700, color: '#0070f3' }}>{maxWords}</span>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '5px' }}>
+                           <div style={{ backgroundColor: '#050505', padding: '8px', borderRadius: '12px', border: '1px solid #1f1f23', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
+                             <label style={{ display: 'block', fontSize: '8px', fontWeight: 800, color: '#555' }}>TEXT</label>
+                             <input type="color" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} style={{ border: 'none', width: '24px', height: '24px', padding: 0, cursor: 'pointer', backgroundColor: 'transparent' }} />
+                           </div>
+                           <div style={{ backgroundColor: '#050505', padding: '8px', borderRadius: '12px', border: '1px solid #1f1f23', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
+                             <label style={{ display: 'block', fontSize: '8px', fontWeight: 800, color: '#555' }}>OUTLINE</label>
+                             <input type="color" value={outlineColor} onChange={(e) => setOutlineColor(e.target.value)} style={{ border: 'none', width: '24px', height: '24px', padding: 0, cursor: 'pointer', backgroundColor: 'transparent' }} />
+                           </div>
+                           <div style={{ backgroundColor: '#050505', padding: '8px', borderRadius: '12px', border: '1px solid #1f1f23', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
+                             <label style={{ display: 'block', fontSize: '8px', fontWeight: 800, color: '#555' }}>ACTIVE WORD</label>
+                             <input type="color" value={highlightColor} onChange={(e) => setHighlightColor(e.target.value)} style={{ border: 'none', width: '24px', height: '24px', padding: 0, cursor: 'pointer', backgroundColor: 'transparent' }} />
+                           </div>
+                        </div>
+                      </div>
+                    </div>
+                    <button className="btn" onClick={startRender} style={{ width: '100%', margin: 0, padding: '15px' }}>
+                      🚀 Render Final Video
+                    </button>
+                  </div>
+
+                  {/* Column 2: Live Editor Preview (Center) */}
+                  <div style={{ 
+                    flex: '1', 
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                    overflow: 'hidden',
+                    backgroundColor: 'rgba(22, 22, 26, 0.65)', 
+                    backdropFilter: 'blur(16px)',
+                    padding: '18px', 
+                    borderRadius: '24px', 
+                    boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+                    border: '1px solid rgba(255,255,255,0.05)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingBottom: '3px' }}>
+                      <span style={{ color: '#8b5cf6', fontSize: '14px', boxShadow: '0 0 10px #8b5cf6', borderRadius: '50%', width: '8px', height: '8px', backgroundColor: '#8b5cf6' }}></span>
+                      <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800, color: '#f3f4f6', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Live Editor Preview</h3>
+                    </div>
+
+                    <div id="video-preview-container" style={{ 
+                      flex: '1',
+                      width: '100%', 
+                      borderRadius: '16px', 
+                      overflow: 'hidden',
+                      backgroundColor: '#000',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      position: 'relative'
+                    }}>
+                      <div style={{ 
+                        position: 'relative', 
+                        maxWidth: '100%', 
+                        maxHeight: '100%',
+                        containerType: 'size',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '100%',
+                        height: '100%',
+                        aspectRatio: '16 / 9'
+                      }}>
+                        {videoUrl || taskId ? (
+                           <video
+                             ref={videoRef}
+                             src={videoUrl || (taskId ? `http://localhost:8000/api/video/${taskId}` : undefined)}
+                             controls
+                             preload="auto"
+                             playsInline
+                             onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+                             style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                           />
+                         ) : (
+                           <div style={{ textAlign: 'center', color: '#888' }}>
+                             <p>Waiting for video metadata...</p>
+                           </div>
+                         )}
+
+                         {/* Headline Overlay */}
+                         {headline && (
+                          <div style={{
+                            position: 'absolute',
+                            top: `calc((${headlineV} / 720) * 100cqh)`,
+                            left: '0',
+                            width: '100%',
+                            textAlign: 'center',
+                            pointerEvents: 'none',
+                            zIndex: 1,
+                            padding: '0 10%'
+                          }}>
+                            <div style={{
+                              fontFamily: headlineFont,
+                              fontSize: `calc((${headlineSize} / 720) * 100cqh)`,
+                              color: headlineColor,
+                              backgroundColor: headlineBgStyle === 'box' ? `${headlineBgColor}CC` : 'transparent',
+                              padding: headlineBgStyle === 'box' ? `calc((10 / 720) * 100cqh) calc((20 / 720) * 100cqh)` : `calc((5 / 720) * 100cqh)`, 
+                              WebkitTextStroke: headlineBgStyle === 'outline' ? `calc((${headlineOutlineSize} / 720) * 100cqh) ${headlineBgColor}` : 'none',
+                              paintOrder: 'stroke fill',
+                              display: 'inline-block',
+                              fontWeight: 800,
+                              lineHeight: '1.2',
+                              whiteSpace: 'pre-wrap',
+                              textAlign: 'center'
+                            }}>
+                              {headline}
+                            </div>
                           </div>
-                          <input type="range" min="1" max="15" value={maxWords} onChange={(e) => setMaxWords(Number(e.target.value))} style={{ width: '100%', accentColor: '#0070f3', cursor: 'pointer' }} />
+                         )}
+
+                        <div style={{
+                          position: 'absolute',
+                          top: '15px',
+                          left: '15px',
+                          backgroundColor: 'rgba(0,0,0,0.85)',
+                          border: '1px solid rgba(255,255,255,0.05)',
+                          color: '#8b5cf6',
+                          padding: '5px 12px',
+                          borderRadius: '8px',
+                          fontFamily: 'monospace',
+                          fontSize: '13px',
+                          fontWeight: 800,
+                          zIndex: 2,
+                          pointerEvents: 'none'
+                        }}>
+                          {formatDetailedTime(currentTime)}
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                           <div style={{ backgroundColor: '#111', padding: '12px', borderRadius: '14px', border: '1px solid #2a2a2a' }}>
-                            <label style={{ display: 'block', fontSize: '10px', fontWeight: 800, color: '#555', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Text Color</label>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <input type="color" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} style={{ border: 'none', width: '30px', height: '30px', padding: 0, borderRadius: '6px', cursor: 'pointer', backgroundColor: 'transparent' }} />
-                              <span style={{ fontSize: '11px', fontFamily: 'monospace', color: '#fff', fontWeight: 600 }}>{primaryColor.toUpperCase()}</span>
+                        {/* Subtitle Overlay */}
+                        <div style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          height: '100%',
+                          pointerEvents: 'none',
+                          zIndex: 1,
+                          padding: `0 5% calc((${marginV} / 720) * 100cqh) 5%`,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'flex-end'
+                        }}>
+                          {subtitles
+                            .filter(sub => currentTime >= sub.start && currentTime <= sub.end)
+                            .map((sub) => (
+                              <div key={`${sub.index}-${animationType}-${bgStyle}`} style={{
+                                fontFamily: fontFamily,
+                                fontSize: `calc((${fontSize} / 720) * 100cqh)`, 
+                                WebkitTextStroke: bgStyle === 'outline' ? `calc((${outlineSize} / 720) * 100cqh) ${outlineColor}` : 'none',
+                                paintOrder: bgStyle === 'outline' ? 'stroke fill' : 'normal',
+                                textShadow: bgStyle === 'shadow' ? `2px 2px 5px rgba(0,0,0,0.9)` : 
+                                            (bgStyle === 'glow' ? `0 0 10px ${primaryColor}, 0 0 18px ${primaryColor}` : 
+                                            (bgStyle === 'outline' ? `0px 2px 4px rgba(0,0,0,0.5)` : 'none')),
+                                backgroundColor: bgStyle === 'box' ? 'rgba(0,0,0,0.65)' : 'transparent',
+                                padding: bgStyle === 'box' ? '6px 16px' : '0',
+                                borderRadius: bgStyle === 'box' ? '8px' : '0',
+                                fontWeight: 800,
+                                lineHeight: '1.25',
+                                whiteSpace: 'pre-wrap',
+                                display: 'inline-block',
+                                animation: animationType === 'fade' ? 'subFadeIn 0.3s ease-out forwards' : 
+                                           (animationType === 'pop' ? 'subPopIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards' : 
+                                           (animationType === 'bounce' ? 'subBounceIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards' : 'none'))
+                              }}>
+                                {animationType === 'karaoke' && sub.words ? (
+                                  sub.words.map((w, idx) => {
+                                    const isWordActive = currentTime >= w.start && currentTime <= w.end;
+                                    return (
+                                      <span key={idx} style={{ color: isWordActive ? highlightColor : primaryColor, transition: 'color 0.1s ease' }}>
+                                        {w.word}
+                                      </span>
+                                    );
+                                  })
+                                ) : (
+                                  <span style={{ color: primaryColor }}>{sub.content}</span>
+                                )}
+                              </div>
+                            ))
+                          }
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Interactive Subtitle Timeline Component (Upgrade 5) */}
+                    <div className="timeline-track-container">
+                      <div className="timeline-header">
+                        <span style={{ fontSize: '11px', fontWeight: 800, color: '#9ca3af', letterSpacing: '0.05em' }}>🎞️ VISUAL TIMELINE</span>
+                        <span style={{ fontSize: '11px', fontFamily: 'monospace', color: '#ec4899', fontWeight: 800 }}>
+                          {currentTime.toFixed(2)}s / {duration > 0 ? duration.toFixed(2) : '0.00'}s
+                        </span>
+                      </div>
+                      
+                      <div 
+                        className="timeline-ruler custom-scrollbar" 
+                        style={{ position: 'relative', width: '100%', height: '54px', overflowX: 'auto', backgroundColor: '#09090b', borderRadius: '10px', border: '1px solid #1c1c24' }}
+                      >
+                        <div style={{ position: 'relative', width: '100%', height: '100%', minWidth: duration > 0 ? `${Math.max(500, duration * 25)}px` : '100%' }}>
+                          {/* Render Subtitle Bars */}
+                          {subtitles.map((sub) => {
+                            const isActive = currentTime >= sub.start && currentTime <= sub.end;
+                            const leftPercent = duration > 0 ? (sub.start / duration) * 100 : 0;
+                            const widthPercent = duration > 0 ? ((sub.end - sub.start) / duration) * 100 : 0;
+                            
+                            return (
+                              <div
+                                key={sub.index}
+                                onClick={() => jumpTo(sub.start)}
+                                className={`timeline-segment-block ${isActive ? 'active' : ''}`}
+                                style={{
+                                  left: `${leftPercent}%`,
+                                  width: `${Math.max(3, widthPercent)}%`,
+                                  top: '10px',
+                                  fontSize: '10px',
+                                  fontWeight: 800
+                                }}
+                                title={`Subtitle #${sub.index}: ${sub.content}`}
+                              >
+                                #{sub.index}
+                              </div>
+                            );
+                          })}
+                          
+                          {/* Playhead indicator bar */}
+                          {duration > 0 && (
+                            <div 
+                              className="timeline-current-indicator" 
+                              style={{ left: `${(currentTime / duration) * 100}%` }}
+                            >
+                              <div className="timeline-current-handle" />
                             </div>
-                           </div>
-                           <div style={{ backgroundColor: '#111', padding: '12px', borderRadius: '14px', border: '1px solid #2a2a2a' }}>
-                            <label style={{ display: 'block', fontSize: '10px', fontWeight: 800, color: '#555', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Highlight</label>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <input type="color" value={highlightColor} onChange={(e) => setHighlightColor(e.target.value)} style={{ border: 'none', width: '30px', height: '30px', padding: 0, borderRadius: '6px', cursor: 'pointer', backgroundColor: 'transparent' }} />
-                              <span style={{ fontSize: '11px', fontFamily: 'monospace', color: '#fff', fontWeight: 600 }}>{highlightColor.toUpperCase()}</span>
-                            </div>
-                           </div>
+                          )}
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Right Column: Subtitle Editor Section */}
-                  <div style={{ flex: '1' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '20px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <h4 style={{ margin: 0, fontSize: '1.2rem', color: '#fff', fontWeight: 700 }}>📝 Edit Subtitles</h4>
-                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#aaa', cursor: 'pointer', userSelect: 'none' }}>
-                            <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} style={{ accentColor: '#0070f3' }} />
-                            Auto-Scroll
-                          </label>
-                          <button onClick={addSubtitle} style={{ padding: '10px 18px', borderRadius: '12px', backgroundColor: '#22c55e', border: 'none', color: 'white', fontSize: '14px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s ease', boxShadow: '0 4px 12px rgba(34,197,94,0.3)' }}>
-                            <span>+</span> Add Segment
-                          </button>
-                        </div>
-                      </div>
-                      
-                      {/* Shift Time Tools */}
-                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center', backgroundColor: '#161616', padding: '12px', borderRadius: '16px', border: '1px solid #2a2a2a' }}>
-                        <span style={{ fontSize: '11px', fontWeight: 800, color: '#555', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Shift All:</span>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          {[-0.5, -0.1, 0.1, 0.5].map(val => (
-                            <button 
-                              key={val} 
-                              onClick={() => shiftTime(val)}
-                              style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #333', backgroundColor: '#222', color: '#eee', fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s ease' }}
-                            >
-                              {val > 0 ? `+${val}` : val}s
-                            </button>
-                          ))}
-                        </div>
-                        <span style={{ fontSize: '12px', color: '#666', fontStyle: 'italic' }}>Sync adjustment</span>
-                      </div>
+                  {/* Column 3: Subtitle Editor (Right) */}
+                  <div style={{ 
+                    flex: '0 0 350px', 
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '15px',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <h4 style={{ margin: 0, fontSize: '1.1rem', color: '#fff', fontWeight: 800 }}>📝 Subtitles ({subtitles.length})</h4>
+                      <button onClick={addSubtitle} style={{ padding: '8px 15px', borderRadius: '10px', backgroundColor: '#10b981', border: 'none', color: 'white', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <span>+ Add Segment</span>
+                      </button>
                     </div>
-                    <div style={{ 
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '15px'
+
+                    {/* Search & Replace Utility */}
+                    <div style={{ backgroundColor: 'rgba(22,22,26,0.65)', padding: '12px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <input 
+                          type="text" 
+                          placeholder="Search for..." 
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          style={{ flex: 1, backgroundColor: '#050505', border: '1px solid #24242b', borderRadius: '8px', padding: '6px 10px', color: '#f3f4f6', fontSize: '12px', outline: 'none' }}
+                        />
+                        <input 
+                          type="text" 
+                          placeholder="Replace with..." 
+                          value={replaceQuery}
+                          onChange={(e) => setReplaceQuery(e.target.value)}
+                          style={{ flex: 1, backgroundColor: '#050505', border: '1px solid #24242b', borderRadius: '8px', padding: '6px 10px', color: '#f3f4f6', fontSize: '12px', outline: 'none' }}
+                        />
+                      </div>
+                      <button 
+                        onClick={() => {
+                          if (!searchQuery) return;
+                          const n = subtitles.map(sub => ({
+                            ...sub,
+                            content: sub.content.split(searchQuery).join(replaceQuery)
+                          }));
+                          setSubtitles(n);
+                        }}
+                        style={{ width: '100%', padding: '8px', borderRadius: '8px', backgroundColor: '#24242b', color: '#f3f4f6', border: '1px solid rgba(255,255,255,0.05)', fontSize: '11px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2c2c35'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#24242b'}
+                      >
+                        🔄 Replace All Occurrences
+                      </button>
+                    </div>
+                    
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', backgroundColor: 'rgba(22,22,26,0.65)', padding: '12px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 800, color: '#4b5563' }}>SHIFT TIME</span>
+                      {[-0.5, 0.5].map(val => (
+                        <button key={val} onClick={() => shiftTime(val)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #24242b', backgroundColor: '#0a0a0c', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
+                          {val > 0 ? `+${val}` : val}s
+                        </button>
+                      ))}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#9ca3af', marginLeft: 'auto', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} style={{ accentColor: '#8b5cf6' }} />
+                        Auto-Scroll
+                      </label>
+                    </div>
+
+                    <div className="custom-scrollbar" style={{ 
+                      flex: '1',
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      gap: '12px', 
+                      overflowY: 'auto', 
+                      paddingRight: '4px' 
                     }}>
                       {subtitles.length > 0 ? subtitles.map((sub, idx) => {
                         const isActive = currentTime >= sub.start && currentTime <= sub.end;
+                        const isSearchMatch = searchQuery && sub.content.toLowerCase().includes(searchQuery.toLowerCase());
+                        
                         return (
                           <div 
                             key={sub.index} 
                             id={`sub-item-${sub.index}`}
+                            onClick={() => jumpTo(sub.start)}
                             style={{ 
-                              padding: '20px', 
-                              border: isActive ? '2px solid #0070f3' : '1px solid #2a2a2a', 
-                              borderRadius: '20px', 
-                              backgroundColor: isActive ? 'rgba(0,112,243,0.05)' : '#111', 
-                              boxShadow: isActive ? '0 10px 30px rgba(0,112,243,0.15)' : 'none',
-                              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+                              padding: '15px', 
+                              border: isSearchMatch ? '2px solid #eab308' : (isActive ? '2px solid #8b5cf6' : '1px solid #24242b'), 
+                              borderRadius: '16px', 
+                              backgroundColor: isSearchMatch ? 'rgba(234, 179, 8, 0.05)' : (isActive ? 'rgba(139,92,246,0.05)' : '#0a0a0c'), 
+                              boxShadow: isSearchMatch ? '0 0 15px rgba(234, 179, 8, 0.15)' : (isActive ? '0 0 15px rgba(139,92,246,0.1)' : 'none'),
+                              transition: 'all 0.2s ease',
+                              position: 'relative',
+                              cursor: 'pointer'
                             }}
                           >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                                 <div style={{ backgroundColor: '#222', padding: '5px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 800, color: '#888', border: '1px solid #333' }}>#{idx+1}</div>
-                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                   <span style={{ fontSize: '10px', color: '#555', fontWeight: 800, letterSpacing: '0.05em' }}>START</span>
-                                   <input type="number" step="0.1" value={sub.start} onChange={(e) => { const n=[...subtitles]; n[idx].start=parseFloat(e.target.value); setSubtitles(n); }} style={{ width: '80px', padding: '6px', borderRadius: '8px', border: '1px solid #333', backgroundColor: '#000', color: '#fff', fontSize: '13px', fontWeight: 700, outline: 'none' }} />
-                                 </div>
-                                 <span style={{ color: '#444', marginTop: '15px', fontWeight: 700 }}>→</span>
-                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                   <span style={{ fontSize: '10px', color: '#555', fontWeight: 800, letterSpacing: '0.05em' }}>END</span>
-                                   <input type="number" step="0.1" value={sub.end} onChange={(e) => { const n=[...subtitles]; n[idx].end=parseFloat(e.target.value); setSubtitles(n); }} style={{ width: '80px', padding: '6px', borderRadius: '8px', border: '1px solid #333', backgroundColor: '#000', color: '#fff', fontSize: '13px', fontWeight: 700, outline: 'none' }} />
-                                 </div>
-                                 <div style={{ marginLeft: '5px', marginTop: '15px', fontSize: '11px', color: '#0070f3', fontWeight: 700, backgroundColor: 'rgba(0,112,243,0.1)', padding: '4px 10px', borderRadius: '8px' }}>
-                                    {(sub.end - sub.start).toFixed(2)}s
-                                 </div>
+                            {isSearchMatch && (
+                              <div style={{ position: 'absolute', top: '-10px', left: '20px', backgroundColor: '#eab308', color: '#000', fontSize: '9px', fontWeight: 900, padding: '2px 8px', borderRadius: '4px', zIndex: 3 }}>
+                                FOUND MATCH
                               </div>
-                              <div style={{ display: 'flex', gap: '10px' }}>
-                                <button onClick={() => jumpTo(sub.start)} style={{ padding: '8px 14px', borderRadius: '10px', border: 'none', backgroundColor: '#1e3a8a', color: '#60a5fa', fontSize: '13px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s ease' }}>▶ Play</button>
-                                <button onClick={() => deleteSubtitle(sub.index)} style={{ padding: '8px 14px', borderRadius: '10px', border: 'none', backgroundColor: '#450a0a', color: '#f87171', fontSize: '13px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s ease' }}>🗑</button>
+                            )}
+
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); deleteSubtitle(sub.index); }}
+                              style={{ 
+                                position: 'absolute',
+                                top: '10px',
+                                right: '10px',
+                                width: '24px',
+                                height: '24px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderRadius: '50%',
+                                border: 'none',
+                                backgroundColor: 'transparent',
+                                color: '#555',
+                                fontSize: '20px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                zIndex: 2,
+                                padding: 0,
+                                lineHeight: 1
+                              }} 
+                              onMouseEnter={(e) => { e.currentTarget.style.color = '#f87171'; e.currentTarget.style.backgroundColor = 'rgba(248,113,113,0.1)'; }} 
+                              onMouseLeave={(e) => { e.currentTarget.style.color = '#555'; e.currentTarget.style.backgroundColor = 'transparent'; }}
+                            >
+                              ×
+                            </button>
+
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }} onClick={(e) => e.stopPropagation()}>
+                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                                   <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: '#050505', padding: '2px', borderRadius: '8px', border: '1px solid #1f1f23' }}>
+                                     <button onClick={(e) => { e.stopPropagation(); const n=[...subtitles]; n[idx].start = Math.max(0, n[idx].start - 0.1); setSubtitles(n); jumpTo(n[idx].start); }} style={{ width: '20px', height: '24px', border: 'none', background: 'transparent', color: '#888', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>-</button>
+                                     <input type="number" step="0.1" value={sub.start.toFixed(1)} onChange={(e) => { const n=[...subtitles]; n[idx].start=parseFloat(e.target.value) || 0; setSubtitles(n); }} style={{ width: '50px', border: 'none', backgroundColor: 'transparent', color: '#ccc', fontSize: '12px', fontWeight: 700, textAlign: 'center', outline: 'none' }} />
+                                     <button onClick={(e) => { e.stopPropagation(); const n=[...subtitles]; n[idx].start = n[idx].start + 0.1; setSubtitles(n); jumpTo(n[idx].start); }} style={{ width: '20px', height: '24px', border: 'none', background: 'transparent', color: '#888', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+</button>
+                                   </div>
+                                   <span style={{ fontSize: '8px', color: '#555', fontWeight: 800 }}>START</span>
+                                 </div>
+
+                                 <span style={{ color: '#444', height: '28px', display: 'flex', alignItems: 'center' }}>-</span>
+
+                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                                   <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: '#050505', padding: '2px', borderRadius: '8px', border: '1px solid #1f1f23' }}>
+                                     <button onClick={(e) => { e.stopPropagation(); const n=[...subtitles]; n[idx].end = Math.max(n[idx].start, n[idx].end - 0.1); setSubtitles(n); jumpTo(n[idx].end); }} style={{ width: '20px', height: '24px', border: 'none', background: 'transparent', color: '#888', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>-</button>
+                                     <input type="number" step="0.1" value={sub.end.toFixed(1)} onChange={(e) => { const n=[...subtitles]; n[idx].end=parseFloat(e.target.value) || 0; setSubtitles(n); }} style={{ width: '50px', border: 'none', backgroundColor: 'transparent', color: '#ccc', fontSize: '12px', fontWeight: 700, textAlign: 'center', outline: 'none' }} />
+                                     <button onClick={(e) => { e.stopPropagation(); const n=[...subtitles]; n[idx].end = n[idx].end + 0.1; setSubtitles(n); jumpTo(n[idx].end); }} style={{ width: '20px', height: '24px', border: 'none', background: 'transparent', color: '#888', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+</button>
+                                   </div>
+                                   <span style={{ fontSize: '8px', color: '#555', fontWeight: 800 }}>END</span>
+                                 </div>
+
+                                 <div style={{ marginLeft: '4px', height: '28px', display: 'flex', alignItems: 'center', padding: '0 8px', borderRadius: '6px', backgroundColor: 'rgba(139,92,246,0.1)', color: '#a855f7', fontSize: '10px', fontWeight: 800 }}>
+                                   {(sub.end - sub.start).toFixed(1)}s
+                                 </div>
                               </div>
                             </div>
                             <textarea 
                               value={sub.content}
+                              onClick={(e) => e.stopPropagation()}
                               onChange={(e) => { const n=[...subtitles]; n[idx].content=e.target.value; setSubtitles(n); }}
-                              style={{ width: '100%', padding: '15px', borderRadius: '16px', border: '1px solid #2a2a2a', backgroundColor: '#000', color: '#fff', fontSize: '15px', lineHeight: '1.6', minHeight: '90px', outline: 'none', resize: 'vertical', transition: 'border-color 0.2s ease' }}
-                              onFocus={(e) => e.target.style.borderColor = '#0070f3'}
-                              onBlur={(e) => e.target.style.borderColor = '#2a2a2a'}
+                              style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #24242b', backgroundColor: '#050505', color: '#f3f4f6', fontSize: '13px', lineHeight: '1.5', minHeight: '55px', outline: 'none', resize: 'vertical' }}
                             />
                           </div>
                         );
-                      }) : <p style={{ textAlign: 'center', color: '#444', padding: '60px', fontSize: '1.1rem' }}>No subtitles found. Click "Add Segment" to start.</p>}
+                      }) : <p style={{ textAlign: 'center', color: '#444', padding: '40px', fontSize: '14px' }}>No subtitles found.</p>}
                     </div>
+                    
+                    <style jsx global>{`
+                      @keyframes subFadeIn {
+                        from { opacity: 0; transform: translateY(10px); }
+                        to { opacity: 1; transform: translateY(0); }
+                      }
+                      @keyframes subPopIn {
+                        0% { transform: scale(0.5); opacity: 0; }
+                        70% { transform: scale(1.1); }
+                        100% { transform: scale(1); opacity: 1; }
+                      }
+                      @keyframes subBounceIn {
+                        0% { transform: scale(0.6); opacity: 0; }
+                        50% { transform: scale(1.15); }
+                        75% { transform: scale(0.95); }
+                        100% { transform: scale(1); opacity: 1; }
+                      }
+                    `}</style>
+
                   </div>
                 </div>
               )}
@@ -976,8 +1087,8 @@ export default function Home() {
         </div>
       ) : (
         <div className="result-section">
-          <div className="video-container">
-            <video src={videoUrl} controls autoPlay loop />
+          <div className="video-container" style={{ borderRadius: '24px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.06)', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.8)' }}>
+            <video src={videoUrl} controls autoPlay loop style={{ width: '100%' }} />
           </div>
           <button 
             className="btn" 
@@ -987,11 +1098,12 @@ export default function Home() {
               a.download = `subtitled_${file?.name || 'video.mp4'}`;
               a.click();
             }}
+            style={{ marginTop: '20px' }}
           >
-            Download Video
+            📥 Download Finished Video
           </button>
-          <button className="btn btn-secondary" onClick={reset}>
-            Process Another
+          <button className="btn btn-secondary" onClick={reset} style={{ marginTop: '12px' }}>
+            🔄 Process Another Video
           </button>
         </div>
       )}

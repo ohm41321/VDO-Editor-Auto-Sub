@@ -89,7 +89,7 @@ pip install -r requirements.txt
 
 ### 3. Run Backend
 ```bash
-python main.py
+py main.py
 # → FastAPI runs on http://localhost:8000
 ```
 
@@ -133,7 +133,7 @@ npm run dev
 **Cause:** First run downloads model from HuggingFace  
 **Fix:** Pre-download manually:
 ```bash
-python -c "from faster_whisper import WhisperModel; WhisperModel('biodatlab/whisper-th-medium-timestamp')"
+py -c "from faster_whisper import WhisperModel; WhisperModel('biodatlab/whisper-th-medium-timestamp')"
 ```
 
 ### Issue: FFmpeg not found

@@ -8,3 +8,5 @@ srt
 pythainlp
 whisperx
 torchaudio
+nvidia-cublas-cu12
+nvidia-cudnn-cu12
